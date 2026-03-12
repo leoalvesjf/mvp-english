@@ -37,6 +37,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
   const audioContextRef = useRef(null)
   const analyserRef = useRef(null)
   const animationFrameRef = useRef(null)
+  const transcriptRef = useRef('')
   const [voices, setVoices] = useState([])
 
   // Check if already practiced today
@@ -232,10 +233,12 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
       if (audioContextRef.current) audioContextRef.current.close()
       
-      // Wait a bit to ensure all results are processed
+      // Submit the latest transcript from the ref (handles both final and interim)
       setTimeout(() => {
-        if (finalTranscript.trim()) {
-          handleSend(finalTranscript)
+        const textToSend = transcriptRef.current.trim()
+        if (textToSend) {
+          handleSend(textToSend)
+          transcriptRef.current = '' // Clear for next time
         }
       }, 500)
     }
@@ -259,7 +262,9 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
           interimTranscript += e.results[i][0].transcript
         }
       }
-      setInput(finalTranscript + interimTranscript)
+      const fullTranscript = finalTranscript + interimTranscript
+      transcriptRef.current = fullTranscript
+      setInput(fullTranscript)
     }
 
     recognition.start()
