@@ -141,6 +141,8 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
   async function handleSend(text) {
     const userText = (text || input).trim()
     if (!userText || loading) return
+    
+    // Explicitly start the timer on first send
     if (!sessionActive) setSessionActive(true)
 
     if (window.speechSynthesis) {
@@ -199,9 +201,11 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     let localFinalTranscript = ''
     transcriptRef.current = '' // Reset ref
 
+    // Start timer immediately when user tries to talk
+    if (!sessionActive) setSessionActive(true)
+
     recognition.onstart = () => {
       setIsRecording(true)
-      if (!sessionActive) setSessionActive(true)
     }
 
     recognition.onresult = (e) => {
@@ -369,7 +373,8 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
             className={`btn-voice ${isRecording ? 'recording' : ''}`}
             onPointerDown={startVoice}
             onPointerUp={stopVoice}
-            onPointerLeave={stopVoice} // Ensure it stops if dragged off
+            onPointerLeave={stopVoice}
+            onContextMenu={(e) => e.preventDefault()} // Block mobile context menu
             title="Segure para falar"
             style={{ 
               '--level': `${audioLevel}px`,
