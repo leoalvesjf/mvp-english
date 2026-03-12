@@ -171,10 +171,15 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     }
   }
 
-  function startVoice() {
+  function toggleVoice() {
+    if (isRecording) {
+      recognitionRef.current?.stop()
+      return
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
-      alert('Seu navegador não suporta voz. Tente Chrome.')
+      alert('Seu navegador não suporta voz. Se estiver no Brave, habilite as funcionalidades de voz nas configurações ou use Chrome.')
       return
     }
 
@@ -188,6 +193,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     recognition.lang = 'en-US'
     recognition.interimResults = true
     recognition.maxAlternatives = 3
+    recognitionRef.current = recognition
 
     let finalTranscript = ''
 
@@ -231,10 +237,14 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
         if (finalTranscript.trim()) {
           handleSend(finalTranscript)
         }
-      }, 300)
+      }, 500)
     }
 
-    recognition.onerror = () => {
+    recognition.onerror = (e) => {
+      console.error('STT Error:', e.error)
+      if (e.error === 'not-allowed') {
+        alert('Permissão de microfone negada. Verifique as configurações do seu navegador.')
+      }
       setIsRecording(false)
       setAudioLevel(0)
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
@@ -252,12 +262,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       setInput(finalTranscript + interimTranscript)
     }
 
-    recognitionRef.current = recognition
     recognition.start()
-  }
-
-  function stopVoice() {
-    recognitionRef.current?.stop()
   }
 
   async function handleLogout() {
@@ -348,11 +353,8 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
           />
           <button
             className={`btn-voice ${isRecording ? 'recording' : ''}`}
-            onMouseDown={startVoice}
-            onMouseUp={stopVoice}
-            onTouchStart={startVoice}
-            onTouchEnd={stopVoice}
-            title="Hold to speak"
+            onClick={toggleVoice}
+            title={isRecording ? 'Stop speaking' : 'Start speaking'}
             style={{ 
               '--level': `${audioLevel}px`,
               boxShadow: isRecording ? `0 0 var(--level) rgba(248,113,113,0.4)` : 'none'
