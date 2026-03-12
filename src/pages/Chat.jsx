@@ -77,10 +77,49 @@ export default function Chat() {
     }])
   }
 
+  function speak(text) {
+    if (!window.speechSynthesis) return
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel()
+
+    // Sanitize text: remove emojis and "TRY ISSO:" lines
+    const cleanText = text
+      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+      .split('\n')
+      .filter(line => !line.trim().startsWith('TRY ISSO:'))
+      .join(' ')
+
+    const utterance = new SpeechSynthesisUtterance(cleanText)
+    utterance.lang = 'en-US'
+    utterance.rate = 0.88
+    utterance.pitch = 1.05
+
+    // Try to find a female English voice
+    const voices = window.speechSynthesis.getVoices()
+    const femaleVoice = voices.find(v => 
+      v.lang.startsWith('en') && 
+      /samantha|zira|karen|moira|victoria/i.test(v.name)
+    )
+    if (femaleVoice) utterance.voice = femaleVoice
+
+    window.speechSynthesis.speak(utterance)
+  }
+
+  // Cancel TTS when user types
+  useEffect(() => {
+    if (input.trim() && window.speechSynthesis) {
+      window.speechSynthesis.cancel()
+    }
+  }, [input])
+
   async function handleSend(text) {
     const userText = (text || input).trim()
     if (!userText || loading) return
     if (!sessionActive) setSessionActive(true)
+
+    // Cancel TTS when sending/recording starts
+    if (window.speechSynthesis) window.speechSynthesis.cancel()
 
     setInput('')
     const userMsg = { id: Date.now(), role: 'user', text: userText }
@@ -95,6 +134,9 @@ export default function Chat() {
 
       const reply = await sendMessage(history)
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: reply }])
+      
+      // Auto-read the reply
+      speak(reply)
     } catch {
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: 'Oops! Something went wrong. Try again! 🙏' }])
     } finally {
@@ -109,17 +151,35 @@ export default function Chat() {
       return
     }
 
+    // Cancel TTS when mic is pressed
+    if (window.speechSynthesis) window.speechSynthesis.cancel()
+
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
-    recognition.interimResults = false
-    recognition.maxAlternatives = 1
+    recognition.interimResults = true
+    recognition.maxAlternatives = 3
+
+    let finalTranscript = ''
 
     recognition.onstart = () => setIsRecording(true)
-    recognition.onend = () => setIsRecording(false)
+    recognition.onend = () => {
+      setIsRecording(false)
+      if (finalTranscript.trim()) {
+        handleSend(finalTranscript)
+      }
+    }
     recognition.onerror = () => setIsRecording(false)
     recognition.onresult = (e) => {
-      const transcript = e.results[0][0].transcript
-      handleSend(transcript)
+      let interimTranscript = ''
+      for (let i = e.resultIndex; i < e.results.length; ++i) {
+        if (e.results[i].isFinal) {
+          finalTranscript += e.results[i][0].transcript
+        } else {
+          interimTranscript += e.results[i][0].transcript
+        }
+      }
+      // Update input with interim results for visual feedback
+      setInput(finalTranscript + interimTranscript)
     }
 
     recognitionRef.current = recognition
