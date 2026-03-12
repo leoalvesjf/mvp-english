@@ -174,58 +174,47 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     }
   }
 
-  async function startVoice(e) {
+  function startVoice(e) {
     if (e) e.preventDefault()
     
-    // Check support
+    // 1. Check support immediately
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
-      alert('Seu navegador não suporta voz. Se estiver no Brave, habilite as funcionalidades de voz nas configurações ou use o Chrome.')
+      alert('Voz não suportada neste navegador.')
       return
     }
 
-    // Stop current speech
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel()
-      setIsSpeaking(false)
-    }
+    // 2. Immediate feedback/state updates
+    if (window.speechSynthesis) window.speechSynthesis.cancel()
+    setIsSpeaking(false)
     setIsPaused(false)
+    if (!sessionActive && !sessionDone) setSessionActive(true)
 
-    // Setup Recognition
+    // 3. Setup Recognition
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
     recognition.interimResults = true
     recognition.maxAlternatives = 1
     recognitionRef.current = recognition
+    
     let localFinalTranscript = ''
-    transcriptRef.current = '' // Reset ref
+    transcriptRef.current = ''
 
-    // Start timer immediately
-    if (!sessionActive && !sessionDone) setSessionActive(true)
-
-    recognition.onstart = () => {
-      setIsRecording(true)
-    }
+    recognition.onstart = () => setIsRecording(true)
 
     recognition.onresult = (e) => {
-      let interimTranscript = ''
+      let interim = ''
       for (let i = e.resultIndex; i < e.results.length; ++i) {
-        if (e.results[i].isFinal) {
-          localFinalTranscript += e.results[i][0].transcript
-        } else {
-          interimTranscript += e.results[i][0].transcript
-        }
+        if (e.results[i].isFinal) localFinalTranscript += e.results[i][0].transcript
+        else interim += e.results[i][0].transcript
       }
-      const full = localFinalTranscript + interimTranscript
+      const full = localFinalTranscript + interim
       transcriptRef.current = full
       setInput(full)
     }
 
     recognition.onerror = (e) => {
       console.error('STT Error:', e.error)
-      if (e.error === 'not-allowed') {
-        alert('Permissão de microfone negada. Verifique as configurações do site.')
-      }
       stopVoice()
     }
 
@@ -238,19 +227,22 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
         audioContextRef.current = null
       }
       
-      // Submit what we have
-      const textToSend = transcriptRef.current.trim()
-      if (textToSend) {
-        handleSend(textToSend)
+      const text = transcriptRef.current.trim()
+      if (text) {
+        handleSend(text)
         transcriptRef.current = ''
       }
     }
 
-    // Start recognition and visualizer simultaneously
+    // 4. Start Recognition SYNCHRONOUSLY to the click/touch
+    recognition.start()
+
+    // 5. Start Visualizer asynchronously (less critical)
+    initVisualizer()
+  }
+
+  async function initVisualizer() {
     try {
-      recognition.start()
-      
-      // Visualizer logic
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const audioContext = new (window.AudioContext || window.webkitAudioContext)()
       const analyser = audioContext.createAnalyser()
@@ -261,17 +253,16 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       analyserRef.current = analyser
       
       const dataArray = new Uint8Array(analyser.frequencyBinCount)
-      const updateLevel = () => {
+      const update = () => {
         if (!analyserRef.current) return
         analyserRef.current.getByteFrequencyData(dataArray)
         const avg = dataArray.reduce((p, c) => p + c, 0) / dataArray.length
         setAudioLevel(Math.min(100, avg * 2.5))
-        animationFrameRef.current = requestAnimationFrame(updateLevel)
+        animationFrameRef.current = requestAnimationFrame(update)
       }
-      updateLevel()
+      update()
     } catch (err) {
-      console.warn('Silent fail on secondary mic access (visualizer only):', err)
-      // Recognition usually still works even if visualizer fails
+      console.warn('Visualizer failed:', err)
     }
   }
 
