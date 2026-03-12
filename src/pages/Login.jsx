@@ -6,6 +6,8 @@ import { useAuth } from '../components/AuthProvider'
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [nickname, setNickname] = useState('')
+  const [mobile, setMobile] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
@@ -29,8 +31,20 @@ export default function Login() {
 
     try {
       if (isSignUp) {
+        if (!nickname || !mobile) {
+          throw new Error('Nickname e Celular são obrigatórios.')
+        }
         console.log('Login: Attempting sign up...')
-        const { data, error } = await supabase.auth.signUp({ email, password })
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              nickname,
+              mobile
+            }
+          }
+        })
         console.log('Login: Sign up result:', data, error)
         if (error) throw error
         setMessage('Conta criada! Verifique seu email para confirmar.')
@@ -59,7 +73,7 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
-          <div className="field">
+           <div className="field">
             <label>Email</label>
             <input
               type="email"
@@ -69,6 +83,31 @@ export default function Login() {
               required
             />
           </div>
+
+          {isSignUp && (
+            <>
+              <div className="field">
+                <label>Nickname (Apelido)</label>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={e => setNickname(e.target.value)}
+                  placeholder="Seu apelido"
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Mobile (Celular)</label>
+                <input
+                  type="tel"
+                  value={mobile}
+                  onChange={e => setMobile(e.target.value)}
+                  placeholder="(00) 00000-0000"
+                  required
+                />
+              </div>
+            </>
+          )}
           <div className="field">
             <label>Senha</label>
             <input
