@@ -142,8 +142,8 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     const userText = (text || input).trim()
     if (!userText || loading) return
     
-    // Explicitly start the timer on first send
-    if (!sessionActive) setSessionActive(true)
+    // Start session timer on first message if not active
+    if (!sessionActive && !sessionDone) setSessionActive(true)
 
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel()
@@ -196,13 +196,11 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     recognition.lang = 'en-US'
     recognition.interimResults = true
     recognition.maxAlternatives = 1
-    recognitionRef.current = recognition
-    
     let localFinalTranscript = ''
     transcriptRef.current = '' // Reset ref
 
-    // Start timer immediately when user tries to talk
-    if (!sessionActive) setSessionActive(true)
+    // Start timer immediately
+    if (!sessionActive && !sessionDone) setSessionActive(true)
 
     recognition.onstart = () => {
       setIsRecording(true)
