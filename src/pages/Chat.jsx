@@ -26,8 +26,13 @@ export default function Chat() {
   const [sessionActive, setSessionActive] = useState(false)
   const [sessionDone, setSessionDone] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [audioLevel, setAudioLevel] = useState(0)
   const bottomRef = useRef(null)
   const recognitionRef = useRef(null)
+  const audioContextRef = useRef(null)
+  const analyserRef = useRef(null)
+  const animationFrameRef = useRef(null)
 
   // Check if already practiced today
   useEffect(() => {
@@ -47,14 +52,14 @@ export default function Chat() {
 
   // Timer
   useEffect(() => {
-    if (!sessionActive || sessionDone) return
+    if (!sessionActive || sessionDone || isSpeaking) return
     if (timeLeft <= 0) {
       finishSession()
       return
     }
     const t = setTimeout(() => setTimeLeft(t => t - 1), 1000)
     return () => clearTimeout(t)
-  }, [sessionActive, timeLeft, sessionDone])
+  }, [sessionActive, timeLeft, sessionDone, isSpeaking])
 
   // Scroll to bottom
   useEffect(() => {
@@ -80,10 +85,9 @@ export default function Chat() {
   function speak(text) {
     if (!window.speechSynthesis) return
 
-    // Cancel any ongoing speech
     window.speechSynthesis.cancel()
+    setIsSpeaking(true)
 
-    // Sanitize text: remove emojis and "TRY ISSO:" lines
     const cleanText = text
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
       .split('\n')
@@ -95,13 +99,15 @@ export default function Chat() {
     utterance.rate = 0.88
     utterance.pitch = 1.05
 
-    // Try to find a female English voice
     const voices = window.speechSynthesis.getVoices()
     const femaleVoice = voices.find(v => 
       v.lang.startsWith('en') && 
       /samantha|zira|karen|moira|victoria/i.test(v.name)
     )
     if (femaleVoice) utterance.voice = femaleVoice
+
+    utterance.onend = () => setIsSpeaking(false)
+    utterance.onerror = () => setIsSpeaking(false)
 
     window.speechSynthesis.speak(utterance)
   }
@@ -110,6 +116,7 @@ export default function Chat() {
   useEffect(() => {
     if (input.trim() && window.speechSynthesis) {
       window.speechSynthesis.cancel()
+      setIsSpeaking(false)
     }
   }, [input])
 
@@ -118,8 +125,10 @@ export default function Chat() {
     if (!userText || loading) return
     if (!sessionActive) setSessionActive(true)
 
-    // Cancel TTS when sending/recording starts
-    if (window.speechSynthesis) window.speechSynthesis.cancel()
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel()
+      setIsSpeaking(false)
+    }
 
     setInput('')
     const userMsg = { id: Date.now(), role: 'user', text: userText }
@@ -151,8 +160,10 @@ export default function Chat() {
       return
     }
 
-    // Cancel TTS when mic is pressed
-    if (window.speechSynthesis) window.speechSynthesis.cancel()
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel()
+      setIsSpeaking(false)
+    }
 
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
@@ -161,14 +172,54 @@ export default function Chat() {
 
     let finalTranscript = ''
 
-    recognition.onstart = () => setIsRecording(true)
-    recognition.onend = () => {
-      setIsRecording(false)
-      if (finalTranscript.trim()) {
-        handleSend(finalTranscript)
+    recognition.onstart = async () => {
+      setIsRecording(true)
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+        const analyser = audioContext.createAnalyser()
+        const source = audioContext.createMediaStreamSource(stream)
+        source.connect(analyser)
+        analyser.fftSize = 256
+        
+        audioContextRef.current = audioContext
+        analyserRef.current = analyser
+        
+        const dataArray = new Uint8Array(analyser.frequencyBinCount)
+        const updateLevel = () => {
+          if (!analyserRef.current) return
+          analyserRef.current.getByteFrequencyData(dataArray)
+          const sum = dataArray.reduce((a, b) => a + b, 0)
+          const average = sum / dataArray.length
+          setAudioLevel(Math.min(100, average * 2))
+          animationFrameRef.current = requestAnimationFrame(updateLevel)
+        }
+        updateLevel()
+      } catch (err) {
+        console.error('Error starting audio visualization:', err)
       }
     }
-    recognition.onerror = () => setIsRecording(false)
+
+    recognition.onend = () => {
+      setIsRecording(false)
+      setAudioLevel(0)
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+      if (audioContextRef.current) audioContextRef.current.close()
+      
+      // Wait a bit to ensure all results are processed
+      setTimeout(() => {
+        if (finalTranscript.trim()) {
+          handleSend(finalTranscript)
+        }
+      }, 300)
+    }
+
+    recognition.onerror = () => {
+      setIsRecording(false)
+      setAudioLevel(0)
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+    }
+
     recognition.onresult = (e) => {
       let interimTranscript = ''
       for (let i = e.resultIndex; i < e.results.length; ++i) {
@@ -178,7 +229,6 @@ export default function Chat() {
           interimTranscript += e.results[i][0].transcript
         }
       }
-      // Update input with interim results for visual feedback
       setInput(finalTranscript + interimTranscript)
     }
 
@@ -276,6 +326,10 @@ export default function Chat() {
             onTouchStart={startVoice}
             onTouchEnd={stopVoice}
             title="Hold to speak"
+            style={{ 
+              '--level': `${audioLevel}px`,
+              boxShadow: isRecording ? `0 0 var(--level) rgba(248,113,113,0.4)` : 'none'
+            }}
           >
             {isRecording ? '⏹' : '🎤'}
           </button>
