@@ -103,15 +103,32 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     window.speechSynthesis.cancel()
     setIsSpeaking(true)
 
-    const cleanText = text
+    // OPTION 1: Filter out Portuguese sentences for a clean native audio experience
+    const sentences = text.split(/([.?!])\s+/)
+    let englishText = ''
+    
+    // We filter out sentences that have Portuguese-specific accents/chars
+    for (let i = 0; i < sentences.length; i += 2) {
+      const sentence = sentences[i]
+      const punctuation = sentences[i+1] || ''
+      if (sentence && !sentence.trim().startsWith('TRY ISSO:') && !/[áéíóúçãõÁÉÍÓÚÇÃÕ]/.test(sentence)) {
+        englishText += sentence + punctuation + ' '
+      }
+    }
+
+    const cleanText = englishText
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
-      .split('\n')
-      .filter(line => !line.trim().startsWith('TRY ISSO:'))
-      .join(' ')
+      .trim()
+
+    // Don't speak if there's no English text left
+    if (!cleanText) {
+      setIsSpeaking(false)
+      return
+    }
 
     const utterance = new SpeechSynthesisUtterance(cleanText)
     utterance.lang = 'en-US'
-    utterance.rate = 0.88
+    utterance.rate = 0.82 // Slightly slower for beginners
     utterance.pitch = 1.05
 
     // Best English voices priority
