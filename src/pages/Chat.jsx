@@ -5,17 +5,6 @@ import { useAuth } from '../components/AuthProvider'
 
 const SESSION_SECONDS = 180 // 3 minutes
 
-const WELCOME_MESSAGE = {
-  id: 'welcome',
-  role: 'assistant',
-  text: `Hello! 👋 I'm SpeakUp, your English practice friend!
-
-Every day we'll chat for 3 minutes. This month we're talking about YOU — who you are, what you like, where you work.
-
-Ready to start? Just say "Hi!" or press the 🎤 button to speak!
-
-TRY ISSO: Diga "Hi, my name is [seu nome]"`
-}
 
 export default function Chat() {
   const { user } = useAuth()
