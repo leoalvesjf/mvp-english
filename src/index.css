@@ -96,6 +96,13 @@ html, body, #root {
 }
 .btn-toggle:hover { color: var(--accent); }
 
+.btn-toggle:hover { color: var(--accent); }
+
+.version-tag {
+  display: block; text-align: center; margin-top: 24px;
+  font-size: 11px; color: var(--text2); opacity: 0.6;
+}
+
 /* ===== CHAT PAGE ===== */
 .chat-page {
   display: flex; flex-direction: column; height: 100%;

@@ -131,6 +131,8 @@ export default function Login() {
         <button className="btn-toggle" onClick={() => { setIsSignUp(!isSignUp); setError(''); setMessage('') }}>
           {isSignUp ? 'Já tenho conta — Entrar' : 'Não tenho conta — Criar'}
         </button>
+
+        <span className="version-tag">Versão Beta : 1.1</span>
       </div>
     </div>
   )
