@@ -365,6 +365,12 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       {/* Input area */}
       {!sessionDone && (
         <div className="input-area">
+          {isRecording && (
+            <div className="recording-status">
+              <span className="pulse"></span> 
+              {input.trim() ? 'Convertendo voz...' : 'Ouvindo...'}
+            </div>
+          )}
           <input
             className="text-input"
             value={input}

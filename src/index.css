@@ -260,6 +260,7 @@ html, body, #root {
 
 /* ===== INPUT AREA ===== */
 .input-area {
+  position: relative;
   display: flex; align-items: center; gap: 12px;
   padding: 20px 24px;
   background: rgba(15, 23, 42, 0.8);
@@ -317,4 +318,42 @@ html, body, #root {
   background: rgba(74,222,128,0.08);
   border-top: 1px solid rgba(74,222,128,0.2);
   color: #4ade80; font-size: 15px; font-weight: 500;
+}
+/* Voice Status */
+.recording-status {
+  position: absolute;
+  top: -36px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text2);
+  background: rgba(15, 23, 42, 0.9);
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: fadeIn 0.3s ease;
+  z-index: 10;
+}
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  background: #f87171;
+  border-radius: 50%;
+  animation: status-pulse 1.5s infinite;
+}
+
+@keyframes status-pulse {
+  0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(248, 113, 113, 0); }
+  100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
