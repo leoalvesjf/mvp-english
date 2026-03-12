@@ -143,6 +143,7 @@ export default function Chat() {
       window.speechSynthesis.cancel()
       setIsSpeaking(false)
     }
+    setIsPaused(false)
 
     setInput('')
     const userMsg = { id: Date.now(), role: 'user', text: userText }
@@ -178,6 +179,7 @@ export default function Chat() {
       window.speechSynthesis.cancel()
       setIsSpeaking(false)
     }
+    setIsPaused(false)
 
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
