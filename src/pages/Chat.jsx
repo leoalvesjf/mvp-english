@@ -196,6 +196,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     recognition.lang = 'en-US'
     recognition.interimResults = true
     recognition.maxAlternatives = 1
+    recognitionRef.current = recognition
     let localFinalTranscript = ''
     transcriptRef.current = '' // Reset ref
 
