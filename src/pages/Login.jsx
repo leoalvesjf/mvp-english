@@ -132,7 +132,7 @@ export default function Login() {
           {isSignUp ? 'Já tenho conta — Entrar' : 'Não tenho conta — Criar'}
         </button>
 
-        <span className="version-tag">Versão Beta : 1.1</span>
+        <span className="version-tag">Versão Beta : {__APP_VERSION__}</span>
       </div>
     </div>
   )
