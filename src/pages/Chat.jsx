@@ -27,12 +27,14 @@ export default function Chat() {
   const [sessionDone, setSessionDone] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
   const bottomRef = useRef(null)
   const recognitionRef = useRef(null)
   const audioContextRef = useRef(null)
   const analyserRef = useRef(null)
   const animationFrameRef = useRef(null)
+  const [voices, setVoices] = useState([])
 
   // Check if already practiced today
   useEffect(() => {
@@ -50,16 +52,25 @@ export default function Chat() {
     if (data) setSessionDone(true)
   }
 
+  // Fetch voices
+  useEffect(() => {
+    const updateVoices = () => {
+      setVoices(window.speechSynthesis.getVoices())
+    }
+    window.speechSynthesis.onvoiceschanged = updateVoices
+    updateVoices()
+  }, [])
+
   // Timer
   useEffect(() => {
-    if (!sessionActive || sessionDone || isSpeaking) return
+    if (!sessionActive || sessionDone || isSpeaking || isPaused) return
     if (timeLeft <= 0) {
       finishSession()
       return
     }
     const t = setTimeout(() => setTimeLeft(t => t - 1), 1000)
     return () => clearTimeout(t)
-  }, [sessionActive, timeLeft, sessionDone, isSpeaking])
+  }, [sessionActive, timeLeft, sessionDone, isSpeaking, isPaused])
 
   // Scroll to bottom
   useEffect(() => {
@@ -99,11 +110,14 @@ export default function Chat() {
     utterance.rate = 0.88
     utterance.pitch = 1.05
 
-    const voices = window.speechSynthesis.getVoices()
-    const femaleVoice = voices.find(v => 
-      v.lang.startsWith('en') && 
-      /samantha|zira|karen|moira|victoria/i.test(v.name)
-    )
+    // Best English voices priority
+    const femaleVoice = voices.find(v => v.lang.startsWith('en') && (
+      /google/i.test(v.name) || 
+      /natural/i.test(v.name) ||
+      /microsoft aria|microsoft zira/i.test(v.name) ||
+      /samantha|victoria|karen/i.test(v.name)
+    )) || voices.find(v => v.lang.startsWith('en'))
+    
     if (femaleVoice) utterance.voice = femaleVoice
 
     utterance.onend = () => setIsSpeaking(false)
@@ -257,20 +271,29 @@ export default function Chat() {
         </div>
         <div className="header-center">
           {sessionActive && !sessionDone && (
-            <div className="timer-wrap">
-              <svg viewBox="0 0 36 36" className="timer-ring">
-                <circle cx="18" cy="18" r="15" fill="none" stroke="#1e293b" strokeWidth="3" />
-                <circle
-                  cx="18" cy="18" r="15" fill="none"
-                  stroke={timerColor} strokeWidth="3"
-                  strokeDasharray={`${timerPercent * 0.942} 94.2`}
-                  strokeLinecap="round"
-                  transform="rotate(-90 18 18)"
-                  style={{ transition: 'stroke-dasharray 1s linear, stroke 0.3s' }}
-                />
-              </svg>
-              <span className="timer-text" style={{ color: timerColor }}>{formatTime(timeLeft)}</span>
-            </div>
+            <>
+              <div className="timer-wrap">
+                <svg viewBox="0 0 36 36" className="timer-ring">
+                  <circle cx="18" cy="18" r="15" fill="none" stroke="#1e293b" strokeWidth="3" />
+                  <circle
+                    cx="18" cy="18" r="15" fill="none"
+                    stroke={timerColor} strokeWidth="3"
+                    strokeDasharray={`${timerPercent * 0.942} 94.2`}
+                    strokeLinecap="round"
+                    transform="rotate(-90 18 18)"
+                    style={{ transition: 'stroke-dasharray 1s linear, stroke 0.3s' }}
+                  />
+                </svg>
+                <span className="timer-text" style={{ color: timerColor }}>{formatTime(timeLeft)}</span>
+              </div>
+              <button 
+                className={`btn-pause ${isPaused ? 'paused' : ''}`} 
+                onClick={() => setIsPaused(!isPaused)}
+                title={isPaused ? 'Continuar' : 'Pausar'}
+              >
+                {isPaused ? '▶️' : '⏸️'}
+              </button>
+            </>
           )}
           {!sessionActive && !sessionDone && (
             <span className="session-hint">3 min · personal intro</span>

@@ -134,6 +134,19 @@ html, body, #root {
 }
 .btn-logout:hover { color: var(--text); }
 
+.btn-pause {
+  background: var(--bg3); border: none; border-radius: 50%;
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 14px; transition: all 0.2s;
+  margin-left: 4px;
+}
+.btn-pause:hover { background: var(--accent); }
+.btn-pause.paused { background: var(--accent); color: var(--bg); animation: flash 1s infinite alternate; }
+
+@keyframes flash {
+  from { opacity: 1; } to { opacity: 0.6; }
+}
+
 /* ===== MESSAGES ===== */
 .messages-area {
   flex: 1; overflow-y: auto; padding: 20px 16px;
