@@ -172,102 +172,111 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     }
   }
 
-  function toggleVoice() {
-    if (isRecording) {
-      recognitionRef.current?.stop()
-      return
-    }
-
+  async function startVoice(e) {
+    if (e) e.preventDefault()
+    
+    // Check support
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
-      alert('Seu navegador não suporta voz. Se estiver no Brave, habilite as funcionalidades de voz nas configurações ou use Chrome.')
+      alert('Seu navegador não suporta voz. Se estiver no Brave, habilite as funcionalidades de voz nas configurações ou use o Chrome.')
       return
     }
 
+    // Stop current speech
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel()
       setIsSpeaking(false)
     }
     setIsPaused(false)
 
+    // Setup Recognition
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
     recognition.interimResults = true
-    recognition.maxAlternatives = 3
+    recognition.maxAlternatives = 1
     recognitionRef.current = recognition
+    
+    let localFinalTranscript = ''
+    transcriptRef.current = '' // Reset ref
 
-    let finalTranscript = ''
-
-    recognition.onstart = async () => {
+    recognition.onstart = () => {
       setIsRecording(true)
       if (!sessionActive) setSessionActive(true)
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-        const analyser = audioContext.createAnalyser()
-        const source = audioContext.createMediaStreamSource(stream)
-        source.connect(analyser)
-        analyser.fftSize = 256
-        
-        audioContextRef.current = audioContext
-        analyserRef.current = analyser
-        
-        const dataArray = new Uint8Array(analyser.frequencyBinCount)
-        const updateLevel = () => {
-          if (!analyserRef.current) return
-          analyserRef.current.getByteFrequencyData(dataArray)
-          const sum = dataArray.reduce((a, b) => a + b, 0)
-          const average = sum / dataArray.length
-          setAudioLevel(Math.min(100, average * 2))
-          animationFrameRef.current = requestAnimationFrame(updateLevel)
-        }
-        updateLevel()
-      } catch (err) {
-        console.error('Error starting audio visualization:', err)
-      }
-    }
-
-    recognition.onend = () => {
-      setIsRecording(false)
-      setAudioLevel(0)
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
-      if (audioContextRef.current) audioContextRef.current.close()
-      
-      // Submit the latest transcript from the ref (handles both final and interim)
-      setTimeout(() => {
-        const textToSend = transcriptRef.current.trim()
-        if (textToSend) {
-          handleSend(textToSend)
-          transcriptRef.current = '' // Clear for next time
-        }
-      }, 500)
-    }
-
-    recognition.onerror = (e) => {
-      console.error('STT Error:', e.error)
-      if (e.error === 'not-allowed') {
-        alert('Permissão de microfone negada. Verifique as configurações do seu navegador.')
-      }
-      setIsRecording(false)
-      setAudioLevel(0)
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
     }
 
     recognition.onresult = (e) => {
       let interimTranscript = ''
       for (let i = e.resultIndex; i < e.results.length; ++i) {
         if (e.results[i].isFinal) {
-          finalTranscript += e.results[i][0].transcript
+          localFinalTranscript += e.results[i][0].transcript
         } else {
           interimTranscript += e.results[i][0].transcript
         }
       }
-      const fullTranscript = finalTranscript + interimTranscript
-      transcriptRef.current = fullTranscript
-      setInput(fullTranscript)
+      const full = localFinalTranscript + interimTranscript
+      transcriptRef.current = full
+      setInput(full)
     }
 
-    recognition.start()
+    recognition.onerror = (e) => {
+      console.error('STT Error:', e.error)
+      if (e.error === 'not-allowed') {
+        alert('Permissão de microfone negada. Verifique as configurações do site.')
+      }
+      stopVoice()
+    }
+
+    recognition.onend = () => {
+      setIsRecording(false)
+      setAudioLevel(0)
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+      if (audioContextRef.current) {
+        audioContextRef.current.close()
+        audioContextRef.current = null
+      }
+      
+      // Submit what we have
+      const textToSend = transcriptRef.current.trim()
+      if (textToSend) {
+        handleSend(textToSend)
+        transcriptRef.current = ''
+      }
+    }
+
+    // Start recognition and visualizer simultaneously
+    try {
+      recognition.start()
+      
+      // Visualizer logic
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+      const analyser = audioContext.createAnalyser()
+      const source = audioContext.createMediaStreamSource(stream)
+      source.connect(analyser)
+      analyser.fftSize = 256
+      audioContextRef.current = audioContext
+      analyserRef.current = analyser
+      
+      const dataArray = new Uint8Array(analyser.frequencyBinCount)
+      const updateLevel = () => {
+        if (!analyserRef.current) return
+        analyserRef.current.getByteFrequencyData(dataArray)
+        const avg = dataArray.reduce((p, c) => p + c, 0) / dataArray.length
+        setAudioLevel(Math.min(100, avg * 2.5))
+        animationFrameRef.current = requestAnimationFrame(updateLevel)
+      }
+      updateLevel()
+    } catch (err) {
+      console.warn('Silent fail on secondary mic access (visualizer only):', err)
+      // Recognition usually still works even if visualizer fails
+    }
+  }
+
+  function stopVoice() {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      recognitionRef.current = null
+    }
   }
 
   async function handleLogout() {
@@ -358,8 +367,10 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
           />
           <button
             className={`btn-voice ${isRecording ? 'recording' : ''}`}
-            onClick={toggleVoice}
-            title={isRecording ? 'Stop speaking' : 'Start speaking'}
+            onPointerDown={startVoice}
+            onPointerUp={stopVoice}
+            onPointerLeave={stopVoice} // Ensure it stops if dragged off
+            title="Segure para falar"
             style={{ 
               '--level': `${audioLevel}px`,
               boxShadow: isRecording ? `0 0 var(--level) rgba(248,113,113,0.4)` : 'none'
