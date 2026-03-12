@@ -174,48 +174,65 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     }
   }
 
-  function startVoice(e) {
-    if (e) e.preventDefault()
-    
-    // 1. Check support immediately
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      alert('Voz não suportada neste navegador.')
+  function toggleVoice() {
+    if (isRecording) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+        recognitionRef.current = null
+      }
       return
     }
 
-    // 2. Immediate feedback/state updates
+    // 1. Check support & Brave specifically
+    const isBrave = navigator.brave !== undefined
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      if (isBrave) {
+        alert('No Brave Mobile, você precisa ativar "Google Play Services" para reconhecimento de voz ou usar o Chrome.')
+      } else {
+        alert('Reconhecimento de voz não suportado neste navegador.')
+      }
+      return
+    }
+
+    // 2. State & Timer
     if (window.speechSynthesis) window.speechSynthesis.cancel()
     setIsSpeaking(false)
     setIsPaused(false)
     if (!sessionActive && !sessionDone) setSessionActive(true)
 
-    // 3. Setup Recognition
+    // 3. Setup
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
     recognition.interimResults = true
     recognition.maxAlternatives = 1
     recognitionRef.current = recognition
     
-    let localFinalTranscript = ''
+    let localFinal = ''
     transcriptRef.current = ''
 
-    recognition.onstart = () => setIsRecording(true)
+    recognition.onstart = () => {
+      setIsRecording(true)
+      initVisualizer()
+    }
 
     recognition.onresult = (e) => {
       let interim = ''
       for (let i = e.resultIndex; i < e.results.length; ++i) {
-        if (e.results[i].isFinal) localFinalTranscript += e.results[i][0].transcript
+        if (e.results[i].isFinal) localFinal += e.results[i][0].transcript
         else interim += e.results[i][0].transcript
       }
-      const full = localFinalTranscript + interim
+      const full = localFinal + interim
       transcriptRef.current = full
       setInput(full)
     }
 
     recognition.onerror = (e) => {
       console.error('STT Error:', e.error)
-      stopVoice()
+      if (e.error === 'service-not-allowed' && isBrave) {
+        alert('O Brave bloqueou a voz. Tente desativar o "Shield" (Escudo) para este site ou usar o Chrome.')
+      }
+      setIsRecording(false)
     }
 
     recognition.onend = () => {
@@ -226,19 +243,15 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
         audioContextRef.current.close()
         audioContextRef.current = null
       }
-      
-      const text = transcriptRef.current.trim()
-      if (text) {
-        handleSend(text)
-        transcriptRef.current = ''
-      }
+      // Note: We DON'T auto-send here now, as requested "gravar primeiro... depois enviar"
     }
 
-    // 4. Start Recognition SYNCHRONOUSLY to the click/touch
-    recognition.start()
-
-    // 5. Start Visualizer asynchronously (less critical)
-    initVisualizer()
+    try {
+      recognition.start()
+    } catch (err) {
+      console.error('Recognition start failed:', err)
+      setIsRecording(false)
+    }
   }
 
   async function initVisualizer() {
@@ -263,13 +276,6 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       update()
     } catch (err) {
       console.warn('Visualizer failed:', err)
-    }
-  }
-
-  function stopVoice() {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-      recognitionRef.current = null
     }
   }
 
@@ -361,11 +367,9 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
           />
           <button
             className={`btn-voice ${isRecording ? 'recording' : ''}`}
-            onPointerDown={startVoice}
-            onPointerUp={stopVoice}
-            onPointerLeave={stopVoice}
-            onContextMenu={(e) => e.preventDefault()} // Block mobile context menu
-            title="Segure para falar"
+            onClick={toggleVoice}
+            onContextMenu={(e) => e.preventDefault()}
+            title={isRecording ? 'Parar gravação' : 'Começar a falar'}
             style={{ 
               '--level': `${audioLevel}px`,
               boxShadow: isRecording ? `0 0 var(--level) rgba(248,113,113,0.4)` : 'none'
