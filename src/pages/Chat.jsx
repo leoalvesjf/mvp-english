@@ -190,6 +190,7 @@ export default function Chat() {
 
     recognition.onstart = async () => {
       setIsRecording(true)
+      if (!sessionActive) setSessionActive(true)
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         const audioContext = new (window.AudioContext || window.webkitAudioContext)()
@@ -272,8 +273,8 @@ export default function Chat() {
           <span className="brand-name">SpeakUp</span>
         </div>
         <div className="header-center">
-          {sessionActive && !sessionDone && (
-            <>
+          {!sessionDone ? (
+            <div className="session-controls">
               <div className="timer-wrap">
                 <svg viewBox="0 0 36 36" className="timer-ring">
                   <circle cx="18" cy="18" r="15" fill="none" stroke="#1e293b" strokeWidth="3" />
@@ -295,12 +296,10 @@ export default function Chat() {
               >
                 {isPaused ? '▶️' : '⏸️'}
               </button>
-            </>
+            </div>
+          ) : (
+            <span className="session-done-badge">✓ Done today</span>
           )}
-          {!sessionActive && !sessionDone && (
-            <span className="session-hint">3 min · personal intro</span>
-          )}
-          {sessionDone && <span className="session-done-badge">✓ Done today</span>}
         </div>
         <button className="btn-logout" onClick={handleLogout} title="Sair">↩</button>
       </header>

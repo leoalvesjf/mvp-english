@@ -116,6 +116,7 @@ html, body, #root {
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
 .header-center { display: flex; align-items: center; gap: 8px; }
+.session-controls { display: flex; align-items: center; gap: 4px; }
 
 .timer-wrap { position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
 .timer-ring { position: absolute; inset: 0; width: 100%; height: 100%; }
