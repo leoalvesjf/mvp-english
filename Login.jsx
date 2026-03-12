@@ -1,0 +1,82 @@
+import { useState } from 'react'
+import { supabase } from '../lib/supabase'
+
+export default function Login() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [isSignUp, setIsSignUp] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    setMessage('')
+
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({ email, password })
+        if (error) throw error
+        setMessage('Conta criada! Verifique seu email para confirmar.')
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) throw error
+      }
+    } catch (err) {
+      setError(err.message === 'Invalid login credentials'
+        ? 'Email ou senha incorretos.'
+        : err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="login-page">
+      <div className="login-card">
+        <div className="login-brand">
+          <span className="brand-icon">🗣️</span>
+          <h1>SpeakUp</h1>
+          <p>Your daily English practice</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="login-form">
+          <div className="field">
+            <label>Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="seu@email.com"
+              required
+            />
+          </div>
+          <div className="field">
+            <label>Senha</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              minLength={6}
+            />
+          </div>
+
+          {error && <p className="msg-error">{error}</p>}
+          {message && <p className="msg-success">{message}</p>}
+
+          <button type="submit" className="btn-primary" disabled={loading}>
+            {loading ? 'Aguarde...' : isSignUp ? 'Criar conta' : 'Entrar'}
+          </button>
+        </form>
+
+        <button className="btn-toggle" onClick={() => { setIsSignUp(!isSignUp); setError(''); setMessage('') }}>
+          {isSignUp ? 'Já tenho conta — Entrar' : 'Não tenho conta — Criar'}
+        </button>
+      </div>
+    </div>
+  )
+}
