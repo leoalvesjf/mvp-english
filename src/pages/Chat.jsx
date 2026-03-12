@@ -204,6 +204,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     // 3. Setup
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
+    recognition.continuous = true
     recognition.interimResults = true
     recognition.maxAlternatives = 1
     recognitionRef.current = recognition
@@ -229,8 +230,15 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
 
     recognition.onerror = (e) => {
       console.error('STT Error:', e.error)
-      if (e.error === 'service-not-allowed' && isBrave) {
-        alert('O Brave bloqueou a voz. Tente desativar o "Shield" (Escudo) para este site ou usar o Chrome.')
+      if (e.error === 'service-not-allowed' || e.error === 'network') {
+        if (isBrave) {
+          alert('Brave bloqueou o serviço de voz. Clique no leão (Shield) e desative-o, ou verifique se as "Funcionalidades do Google" estão ativas no seu Android/iOS.')
+        } else {
+          alert('Erro no serviço de voz: ' + e.error)
+        }
+      }
+      if (e.error === 'no-speech') {
+        console.warn('Nenhuma fala detectada.')
       }
       setIsRecording(false)
     }
