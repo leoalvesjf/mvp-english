@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../components/AuthProvider'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -8,6 +10,16 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  
+  const { user } = useAuth()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (user) {
+      console.log('Login: User detected, redirecting to /chat...')
+      navigate('/chat', { replace: true })
+    }
+  }, [user, navigate])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -17,11 +29,15 @@ export default function Login() {
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({ email, password })
+        console.log('Login: Attempting sign up...')
+        const { data, error } = await supabase.auth.signUp({ email, password })
+        console.log('Login: Sign up result:', data, error)
         if (error) throw error
         setMessage('Conta criada! Verifique seu email para confirmar.')
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        console.log('Login: Attempting sign in...')
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+        console.log('Login: Sign in result:', data, error)
         if (error) throw error
       }
     } catch (err) {
