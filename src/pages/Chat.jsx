@@ -38,6 +38,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
   const analyserRef = useRef(null)
   const animationFrameRef = useRef(null)
   const transcriptRef = useRef('')
+  const silenceTimerRef = useRef(null)
   const [voices, setVoices] = useState([])
 
   // Check if already practiced today
@@ -153,6 +154,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
 
   function toggleVoice() {
     if (isRecording) {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
       if (recognitionRef.current) {
         recognitionRef.current.stop()
         recognitionRef.current = null
@@ -181,8 +183,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     // 3. Setup
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
-    // Disable continuous on mobile for better stability
-    recognition.continuous = false 
+    recognition.continuous = true 
     recognition.interimResults = true
     recognition.maxAlternatives = 1
     recognitionRef.current = recognition
@@ -198,7 +199,10 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       }
     }
 
+    // Reset silence timer whenever we get a result
     recognition.onresult = (e) => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
+      
       let interim = ''
       for (let i = e.resultIndex; i < e.results.length; ++i) {
         if (e.results[i].isFinal) localFinal += e.results[i][0].transcript
@@ -207,6 +211,13 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       const full = localFinal + interim
       transcriptRef.current = full
       setInput(full)
+
+      // Stop automatically after 1.5s of silence
+      silenceTimerRef.current = setTimeout(() => {
+        if (recognitionRef.current) {
+          recognitionRef.current.stop()
+        }
+      }, 1500)
     }
 
     recognition.onerror = (e) => {
@@ -219,11 +230,13 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
         }
       }
       setIsRecording(false)
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
     }
 
     recognition.onend = () => {
       setIsRecording(false)
       setAudioLevel(0)
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
       if (audioContextRef.current) {
         audioContextRef.current.close()
