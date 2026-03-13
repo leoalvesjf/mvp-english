@@ -24,7 +24,7 @@ export async function sendMessage(messages) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
+      'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true'
     },
@@ -41,30 +41,46 @@ export async function sendMessage(messages) {
   return data.content[0].text
 }
 
-export async function speakWithOpenAI(text) {
-  const cleanText = text
-    .replace(/TRY ISSO:.*$/gm, '')
-    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
-    .trim();
+export async function speakWithOpenAI(text, audioElement) {
+  try {
+    // 1. Clean the text
+    const cleanText = text
+      .replace(/TRY ISSO:.*$/gm, '')
+      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+      .trim();
 
-  if (!cleanText) return;
+    if (!cleanText) return;
 
-  const response = await fetch('https://api.openai.com/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: "tts-1",
-      voice: "nova",
-      input: cleanText
-    })
-  });
+    // 2. Fetch the audio from OpenAI
+    const response = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: "tts-1",
+        voice: "nova",
+        input: cleanText
+      })
+    });
 
-  if (!response.ok) throw new Error('OpenAI TTS API error');
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  audio.play();
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`OpenAI TTS erro: ${response.status} - ${errText}`);
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    
+    // 3. Play the audio using the provided audio element (to bypass mobile autoplay policies)
+    const audio = audioElement || new Audio();
+    audio.src = url;
+    audio.onended = () => setIsSpeaking && setIsSpeaking(false);
+    await audio.play();
+  } catch (err) {
+    console.error('Audio play error:', err);
+    // Exibe o erro para ajudar no debug se for um problema de chave/CORS
+    alert('Erro no áudio da OpenAI:\n' + err.message);
+  }
 }

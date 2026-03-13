@@ -1,0 +1,17 @@
+HTTP/1.1 400 Bad Request
+Date: Fri, 13 Mar 2026 23:11:56 GMT
+Content-Type: application/json; charset=utf-8
+Content-Length: 443
+Connection: keep-alive
+access-control-allow-origin: *
+vary: Origin
+x-request-id: req_dc818e8451584796b66cbaa67628a52c
+x-openai-proxy-wasm: v0.1
+Server: cloudflare
+cf-cache-status: DYNAMIC
+set-cookie: __cf_bm=G9jjC6NsjQdPPwdn.ND5RDtHsRzHiN3Z2xfciVvhlxs-1773443515.50848-1.0.1.1-BV7hZYzUGSE32rcIWks6Abu7jo3gVqT0xy2FlaJ967s6tFAI_P7qdgxV4VFafZtf7iOsAgu.ebO_884SVINIWEOdro7mpTTpPKtcfQ9fqgKO295aT0KsFpfILtvOKB57; HttpOnly; Secure; Path=/; Domain=api.openai.com; Expires=Fri, 13 Mar 2026 23:41:56 GMT
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+X-Content-Type-Options: nosniff
+CF-RAY: 9dbeb873e94eca76-GIG
+alt-svc: h3=":443"; ma=86400
+

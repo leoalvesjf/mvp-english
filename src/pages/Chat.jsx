@@ -113,10 +113,14 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     // Start session timer on first message if not active
     if (!sessionActive && !sessionDone) setSessionActive(true)
 
+    // Pre-warm the audio object for mobile browsers on this synchronous click tick
+    const audioPlayer = new Audio();
+    audioPlayer.play().catch(() => {});
+
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel()
-      setIsSpeaking(false)
     }
+    setIsSpeaking(false)
     setIsPaused(false)
 
     setInput('')
@@ -134,7 +138,12 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: reply }])
       
       // Auto-read the reply
-      speakWithOpenAI(reply)
+      setIsSpeaking(true);
+      speakWithOpenAI(reply, audioPlayer).then(() => {
+        setIsSpeaking(false);
+      }).catch(() => {
+        setIsSpeaking(false);
+      });
     } catch {
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: 'Oops! Something went wrong. Try again! 🙏' }])
     } finally {
