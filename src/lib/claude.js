@@ -60,7 +60,7 @@ export async function speakWithOpenAI(text, audioElement) {
       },
       body: JSON.stringify({
         model: "tts-1",
-        voice: "nova",
+        voice: "alloy",
         input: cleanText
       })
     });
