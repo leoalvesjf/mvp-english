@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { sendMessage } from '../lib/claude'
+import { sendMessage, speakWithOpenAI } from '../lib/claude'
 import { useAuth } from '../components/AuthProvider'
 
 const SESSION_SECONDS = 180 // 3 minutes
@@ -97,55 +97,6 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     }])
   }
 
-  function speak(text) {
-    if (!window.speechSynthesis) return
-
-    window.speechSynthesis.cancel()
-    setIsSpeaking(true)
-
-    // OPTION 1: Filter out Portuguese sentences for a clean native audio experience
-    const sentences = text.split(/([.?!])\s+/)
-    let englishText = ''
-    
-    // We filter out sentences that have Portuguese-specific accents/chars
-    for (let i = 0; i < sentences.length; i += 2) {
-      const sentence = sentences[i]
-      const punctuation = sentences[i+1] || ''
-      if (sentence && !sentence.trim().startsWith('TRY ISSO:') && !/[áéíóúçãõÁÉÍÓÚÇÃÕ]/.test(sentence)) {
-        englishText += sentence + punctuation + ' '
-      }
-    }
-
-    const cleanText = englishText
-      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
-      .trim()
-
-    // Don't speak if there's no English text left
-    if (!cleanText) {
-      setIsSpeaking(false)
-      return
-    }
-
-    const utterance = new SpeechSynthesisUtterance(cleanText)
-    utterance.lang = 'en-US'
-    utterance.rate = 0.82 // Slightly slower for beginners
-    utterance.pitch = 1.05
-
-    // Best English voices priority
-    const femaleVoice = voices.find(v => v.lang.startsWith('en') && (
-      /google/i.test(v.name) || 
-      /natural/i.test(v.name) ||
-      /microsoft aria|microsoft zira/i.test(v.name) ||
-      /samantha|victoria|karen/i.test(v.name)
-    )) || voices.find(v => v.lang.startsWith('en'))
-    
-    if (femaleVoice) utterance.voice = femaleVoice
-
-    utterance.onend = () => setIsSpeaking(false)
-    utterance.onerror = () => setIsSpeaking(false)
-
-    window.speechSynthesis.speak(utterance)
-  }
 
   // Cancel TTS when user types
   useEffect(() => {
@@ -183,7 +134,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: reply }])
       
       // Auto-read the reply
-      speak(reply)
+      speakWithOpenAI(reply)
     } catch {
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: 'Oops! Something went wrong. Try again! 🙏' }])
     } finally {

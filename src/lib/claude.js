@@ -40,3 +40,31 @@ export async function sendMessage(messages) {
   const data = await response.json()
   return data.content[0].text
 }
+
+export async function speakWithOpenAI(text) {
+  const cleanText = text
+    .replace(/TRY ISSO:.*$/gm, '')
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+    .trim();
+
+  if (!cleanText) return;
+
+  const response = await fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: "tts-1",
+      voice: "nova",
+      input: cleanText
+    })
+  });
+
+  if (!response.ok) throw new Error('OpenAI TTS API error');
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.play();
+}
