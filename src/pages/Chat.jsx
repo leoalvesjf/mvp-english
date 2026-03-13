@@ -221,7 +221,8 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     // 3. Setup
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
-    recognition.continuous = true
+    // Disable continuous on mobile for better stability
+    recognition.continuous = false 
     recognition.interimResults = true
     recognition.maxAlternatives = 1
     recognitionRef.current = recognition
@@ -231,7 +232,10 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
 
     recognition.onstart = () => {
       setIsRecording(true)
-      initVisualizer()
+      // Only init visualizer on desktop to avoid hardware conflicts on mobile
+      if (!window.matchMedia('(max-width: 768px)').matches) {
+        initVisualizer()
+      }
     }
 
     recognition.onresult = (e) => {
@@ -254,9 +258,6 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
           alert('Erro no serviço de voz: ' + e.error)
         }
       }
-      if (e.error === 'no-speech') {
-        console.warn('Nenhuma fala detectada.')
-      }
       setIsRecording(false)
     }
 
@@ -268,9 +269,9 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
         audioContextRef.current.close()
         audioContextRef.current = null
       }
-      // Note: We DON'T auto-send here now, as requested "gravar primeiro... depois enviar"
     }
 
+    // CRITICAL: Start immediately to satisfy mobile security
     try {
       recognition.start()
     } catch (err) {
