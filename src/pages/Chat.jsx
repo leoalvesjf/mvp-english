@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { sendMessage, speakWithOpenAI } from '../lib/claude'
 import { useAuth } from '../components/AuthProvider'
 
-const SESSION_SECONDS = 180 // 3 minutes
+const MAX_MESSAGES = 10 // 10 AI responses per session
 
 
 export default function Chat() {
@@ -15,7 +15,7 @@ export default function Chat() {
     role: 'assistant',
     text: `Hello ${nickname}! 👋 I'm SpeakUp, your English practice friend!
 
-Every day we'll chat for 3 minutes. This month we're talking about YOU — who you are, what you like, where you work.
+Every day we'll chat for ${MAX_MESSAGES} messages. This month we're talking about YOU — who you are, what you like, where you work.
 
 Ready to start? Just say "Hi!" or press the 🎤 button to speak!
 
@@ -25,12 +25,11 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
   const [messages, setMessages] = useState([WELCOME_MESSAGE])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(SESSION_SECONDS)
+  const [aiMessageCount, setAiMessageCount] = useState(0)
   const [sessionActive, setSessionActive] = useState(false)
   const [sessionDone, setSessionDone] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
-  const [isPaused, setIsPaused] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
   const bottomRef = useRef(null)
   const recognitionRef = useRef(null)
@@ -66,36 +65,31 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     updateVoices()
   }, [])
 
-  // Timer
-  useEffect(() => {
-    if (!sessionActive || sessionDone || isSpeaking || isPaused) return
-    if (timeLeft <= 0) {
-      finishSession()
-      return
-    }
-    const t = setTimeout(() => setTimeLeft(t => t - 1), 1000)
-    return () => clearTimeout(t)
-  }, [sessionActive, timeLeft, sessionDone, isSpeaking, isPaused])
-
   // Scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  function formatTime(s) {
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-  }
-
-  async function finishSession() {
+  async function finishSession(audioElement) {
     setSessionActive(false)
     setSessionDone(true)
     const today = new Date().toISOString().split('T')[0]
     await supabase.from('sessions').insert({ user_id: user.id, date: today, messages_count: messages.length })
+    
+    const farewellText = "Parabéns! Você completou sua prática de hoje. Você foi incrível! Volte amanhã para continuar aprendendo. See you tomorrow!"
+    
     setMessages(m => [...m, {
       id: Date.now(),
       role: 'assistant',
-      text: `Great session today! 🎉 You practiced for 3 minutes. Come back tomorrow to keep improving! See you! 👋`
+      text: farewellText
     }])
+
+    setIsSpeaking(true)
+    speakWithOpenAI(farewellText, audioElement).then(() => {
+      setIsSpeaking(false)
+    }).catch(() => {
+      setIsSpeaking(false)
+    })
   }
 
 
@@ -122,7 +116,6 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       window.speechSynthesis.cancel()
     }
     setIsSpeaking(false)
-    setIsPaused(false)
 
     setInput('')
     const userMsg = { id: Date.now(), role: 'user', text: userText }
@@ -138,13 +131,21 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       const reply = await sendMessage(history)
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: reply }])
       
-      // Auto-read the reply
-      setIsSpeaking(true);
-      speakWithOpenAI(reply, audioPlayer).then(() => {
-        setIsSpeaking(false);
-      }).catch(() => {
-        setIsSpeaking(false);
-      });
+      const newCount = aiMessageCount + 1
+      setAiMessageCount(newCount)
+
+      if (newCount >= MAX_MESSAGES) {
+        // Automatically finish session if limit reached
+        finishSession(audioPlayer)
+      } else {
+        // Auto-read the reply
+        setIsSpeaking(true);
+        speakWithOpenAI(reply, audioPlayer).then(() => {
+          setIsSpeaking(false);
+        }).catch(() => {
+          setIsSpeaking(false);
+        });
+      }
     } catch {
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: 'Oops! Something went wrong. Try again! 🙏' }])
     } finally {
@@ -174,10 +175,9 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       return
     }
 
-    // 2. State & Timer
+    // 2. State & Mode
     if (window.speechSynthesis) window.speechSynthesis.cancel()
     setIsSpeaking(false)
-    setIsPaused(false)
     if (!sessionActive && !sessionDone) setSessionActive(true)
 
     // 3. Setup
@@ -282,47 +282,40 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     await supabase.auth.signOut()
   }
 
-  const timerPercent = (timeLeft / SESSION_SECONDS) * 100
-  const timerColor = timeLeft > 60 ? '#22d3ee' : timeLeft > 30 ? '#fbbf24' : '#f87171'
+  const timerPercent = (aiMessageCount / MAX_MESSAGES) * 100
 
   return (
     <div className="chat-page">
       {/* Header */}
-      <header className="chat-header">
-        <div className="header-brand">
-          <span>🗣️</span>
-          <span className="brand-name">SpeakUp</span>
-        </div>
-        <div className="header-center">
+      <header className="chat-header" style={{ flexDirection: 'column', padding: '12px 16px', gap: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <div className="header-brand">
+            <span>🗣️</span>
+            <span className="brand-name">SpeakUp</span>
+          </div>
+          
           {!sessionDone ? (
-            <div className="session-controls">
-              <div className="timer-wrap">
-                <svg viewBox="0 0 36 36" className="timer-ring">
-                  <circle cx="18" cy="18" r="15" fill="none" stroke="#1e293b" strokeWidth="3" />
-                  <circle
-                    cx="18" cy="18" r="15" fill="none"
-                    stroke={timerColor} strokeWidth="3"
-                    strokeDasharray={`${timerPercent * 0.942} 94.2`}
-                    strokeLinecap="round"
-                    transform="rotate(-90 18 18)"
-                    style={{ transition: 'stroke-dasharray 1s linear, stroke 0.3s' }}
-                  />
-                </svg>
-                <span className="timer-text" style={{ color: timerColor }}>{formatTime(timeLeft)}</span>
-              </div>
-              <button 
-                className={`btn-pause ${isPaused ? 'paused' : ''}`} 
-                onClick={() => setIsPaused(!isPaused)}
-                title={isPaused ? 'Continuar' : 'Pausar'}
-              >
-                {isPaused ? '▶️' : '⏸️'}
-              </button>
+            <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: '500' }}>
+              {aiMessageCount}/{MAX_MESSAGES} Mensagens
             </div>
           ) : (
-            <span className="session-done-badge">✓ Done today</span>
+            <span className="session-done-badge" style={{ fontSize: '0.85rem' }}>✓ Done today</span>
           )}
+          
+          <button className="btn-logout" onClick={handleLogout} title="Sair" style={{ marginLeft: 0 }}>↩</button>
         </div>
-        <button className="btn-logout" onClick={handleLogout} title="Sair">↩</button>
+        
+        {/* Progress Bar */}
+        {!sessionDone && (
+          <div style={{ width: '100%', height: '6px', backgroundColor: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
+            <div style={{ 
+              height: '100%', 
+              width: `${timerPercent}%`, 
+              backgroundColor: '#22d3ee', 
+              transition: 'width 0.4s ease-out' 
+            }} />
+          </div>
+        )}
       </header>
 
       {/* Messages */}
