@@ -87,3 +87,36 @@ export async function speakWithOpenAI(text, audioElement) {
     alert('Erro no áudio da OpenAI:\n' + err.message);
   }
 }
+
+export async function transcribeWithOpenAI(audioBlob) {
+  try {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'audio.webm'); // WebM is common on web MediaRecorder, wait, let's just use audio.webm
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'en'); // optimize for English since it's an English practice app
+    
+    // Add prompt to give context to Whisper
+    formData.append('prompt', 'Hello SpeakUp! This is a typical English practice phrase with Brazilian accent.');
+
+    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`
+        // Content-Type is deliberately missing so browser sets boundaries for FormData
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('Whisper STT Error:', response.status, errText);
+      throw new Error(`OpenAI Whisper erro: ${response.status} - ${errText}`);
+    }
+
+    const data = await response.json();
+    return data.text;
+  } catch (err) {
+    console.error('Transcription error:', err);
+    throw err;
+  }
+}

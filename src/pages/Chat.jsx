@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { sendMessage, speakWithOpenAI } from '../lib/claude'
+import { sendMessage, speakWithOpenAI, transcribeWithOpenAI } from '../lib/claude'
 import { useAuth } from '../components/AuthProvider'
 
 const MAX_MESSAGES = 10 // 10 AI responses per session
@@ -33,12 +33,11 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
   const bottomRef = useRef(null)
-  const recognitionRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
   const audioContextRef = useRef(null)
   const analyserRef = useRef(null)
   const animationFrameRef = useRef(null)
-  const transcriptRef = useRef('')
-  const silenceTimerRef = useRef(null)
   const [voices, setVoices] = useState([])
 
   // Check if already practiced today
@@ -158,26 +157,18 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     }
   }
 
-  function toggleVoice() {
+  async function toggleVoice() {
     if (isRecording) {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-        recognitionRef.current = null
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop()
       }
       return
     }
 
-    // 1. Check support & Brave specifically
-    const isBrave = navigator.brave !== undefined
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      if (isBrave) {
-        alert('No Brave Mobile, você precisa ativar "Google Play Services" para reconhecimento de voz ou usar o Chrome.')
-      } else {
-        alert('Reconhecimento de voz não suportado neste navegador.')
-      }
-      return
+    // 1. Check support
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+       alert('Seu navegador não suporta gravação de áudio.')
+       return
     }
 
     // 2. State & Mode
@@ -186,78 +177,62 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     if (!sessionActive && !sessionDone) setSessionActive(true)
 
     // 3. Setup
-    const recognition = new SpeechRecognition()
-    recognition.lang = 'en-US'
-    // Disable continuous mode to prevent Android duplicate word bugs. 
-    // It will stop automatically when the user pauses.
-    recognition.continuous = false 
-    recognition.interimResults = true
-    recognition.maxAlternatives = 1
-    recognitionRef.current = recognition
-
-    recognition.onstart = () => {
-      setIsRecording(true)
-      // Only init visualizer on desktop to avoid hardware conflicts on mobile
-      if (!window.matchMedia('(max-width: 768px)').matches) {
-        initVisualizer()
-      }
-    }
-
-    recognition.onresult = (e) => {
-      let currentTranscript = ''
-      for (let i = 0; i < e.results.length; ++i) {
-        currentTranscript += e.results[i][0].transcript
-      }
-      
-      transcriptRef.current = currentTranscript
-      setInput(currentTranscript)
-
-      // It stops automatically when continuous=false. We can rely on onend.
-      // But we still keep a safety timer just in case it hangs.
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-      silenceTimerRef.current = setTimeout(() => {
-        if (recognitionRef.current) {
-          recognitionRef.current.stop()
-        }
-      }, 2000)
-    }
-
-    recognition.onerror = (e) => {
-      console.error('STT Error:', e.error)
-      if (e.error === 'service-not-allowed' || e.error === 'network') {
-        if (isBrave) {
-          alert('Brave bloqueou o serviço de voz. Clique no leão (Shield) e desative-o, ou verifique se as "Funcionalidades do Google" estão ativas no seu Android/iOS.')
-        } else {
-          alert('Erro no serviço de voz: ' + e.error)
-        }
-      }
-      setIsRecording(false)
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-    }
-
-    recognition.onend = () => {
-      setIsRecording(false)
-      setAudioLevel(0)
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
-      if (audioContextRef.current) {
-        audioContextRef.current.close()
-        audioContextRef.current = null
-      }
-    }
-
-    // CRITICAL: Start immediately to satisfy mobile security
     try {
-      recognition.start()
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+      audioChunksRef.current = []
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data)
+        }
+      }
+
+      mediaRecorder.onstart = () => {
+        setIsRecording(true)
+        if (!window.matchMedia('(max-width: 768px)').matches) {
+          initVisualizer(stream) // pass stream to avoid asking permission twice
+        }
+      }
+
+      mediaRecorder.onstop = async () => {
+        setIsRecording(false)
+        setAudioLevel(0)
+        setLoading(true)
+
+        // Stop all tracks to release microphone
+        stream.getTracks().forEach(track => track.stop())
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+        if (audioContextRef.current) {
+          audioContextRef.current.close()
+          audioContextRef.current = null
+        }
+
+        try {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+          const text = await transcribeWithOpenAI(audioBlob)
+          if (text) {
+             setInput(prev => prev ? prev + ' ' + text : text)
+          }
+        } catch (err) {
+          alert('Erro ao transcrever áudio: ' + err.message)
+        } finally {
+          setLoading(false)
+        }
+      }
+
+      mediaRecorder.start()
     } catch (err) {
-      console.error('Recognition start failed:', err)
+      console.error('Mic access error:', err)
+      alert('Não foi possível acessar seu microfone. Verifique as permissões de gravação.')
       setIsRecording(false)
     }
   }
 
-  async function initVisualizer() {
+  async function initVisualizer(streamToUse) {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = streamToUse || await navigator.mediaDevices.getUserMedia({ audio: true })
       const audioContext = new (window.AudioContext || window.webkitAudioContext)()
       const analyser = audioContext.createAnalyser()
       const source = audioContext.createMediaStreamSource(stream)
