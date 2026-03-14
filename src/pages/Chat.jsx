@@ -188,7 +188,9 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     // 3. Setup
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
-    recognition.continuous = true 
+    // Disable continuous mode to prevent Android duplicate word bugs. 
+    // It will stop automatically when the user pauses.
+    recognition.continuous = false 
     recognition.interimResults = true
     recognition.maxAlternatives = 1
     recognitionRef.current = recognition
@@ -201,32 +203,23 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       }
     }
 
-    // Reset silence timer whenever we get a result
     recognition.onresult = (e) => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-      
-      let finalTranscript = ''
-      let interimTranscript = ''
-      
-      // Build the string from all results in the current event
+      let currentTranscript = ''
       for (let i = 0; i < e.results.length; ++i) {
-        if (e.results[i].isFinal) {
-          finalTranscript += e.results[i][0].transcript
-        } else {
-          interimTranscript += e.results[i][0].transcript
-        }
+        currentTranscript += e.results[i][0].transcript
       }
       
-      const full = finalTranscript + interimTranscript
-      transcriptRef.current = full
-      setInput(full)
+      transcriptRef.current = currentTranscript
+      setInput(currentTranscript)
 
-      // Stop automatically after 1.5s of silence
+      // It stops automatically when continuous=false. We can rely on onend.
+      // But we still keep a safety timer just in case it hangs.
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
       silenceTimerRef.current = setTimeout(() => {
         if (recognitionRef.current) {
           recognitionRef.current.stop()
         }
-      }, 1500)
+      }, 2000)
     }
 
     recognition.onerror = (e) => {
