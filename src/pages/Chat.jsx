@@ -25,6 +25,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
   const [messages, setMessages] = useState([WELCOME_MESSAGE])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isSending, setIsSending] = useState(false)
   const [aiMessageCount, setAiMessageCount] = useState(0)
   const [sessionActive, setSessionActive] = useState(false)
   const [sessionDone, setSessionDone] = useState(false)
@@ -102,9 +103,13 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
   }, [input])
 
   async function handleSend(text) {
+    if (loading || isSending) return
     const userText = (text || input).trim()
-    if (!userText || loading) return
+    if (!userText) return
     
+    // Set loading immediately to prevent double-clicks
+    setIsSending(true)
+    setLoading(true)
     // Start session timer on first message if not active
     if (!sessionActive && !sessionDone) setSessionActive(true)
 
@@ -121,7 +126,6 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     const userMsg = { id: Date.now(), role: 'user', text: userText }
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
-    setLoading(true)
 
     try {
       const history = newMessages
@@ -150,6 +154,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: 'Oops! Something went wrong. Try again! 🙏' }])
     } finally {
       setLoading(false)
+      setIsSending(false)
     }
   }
 
@@ -361,7 +366,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSend()}
             placeholder="Type in English..."
-            disabled={loading}
+            disabled={loading || isSending}
           />
           <button
             className={`btn-voice ${isRecording ? 'recording' : ''}`}
@@ -378,7 +383,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
           <button
             className="btn-send"
             onClick={() => handleSend()}
-            disabled={loading || !input.trim()}
+            disabled={loading || isSending || !input.trim()}
           >
             ➤
           </button>
