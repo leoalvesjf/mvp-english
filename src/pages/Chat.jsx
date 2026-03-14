@@ -192,9 +192,6 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     recognition.interimResults = true
     recognition.maxAlternatives = 1
     recognitionRef.current = recognition
-    
-    let localFinal = ''
-    transcriptRef.current = ''
 
     recognition.onstart = () => {
       setIsRecording(true)
@@ -208,12 +205,19 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     recognition.onresult = (e) => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
       
-      let interim = ''
-      for (let i = e.resultIndex; i < e.results.length; ++i) {
-        if (e.results[i].isFinal) localFinal += e.results[i][0].transcript
-        else interim += e.results[i][0].transcript
+      let finalTranscript = ''
+      let interimTranscript = ''
+      
+      // Build the string from all results in the current event
+      for (let i = 0; i < e.results.length; ++i) {
+        if (e.results[i].isFinal) {
+          finalTranscript += e.results[i][0].transcript
+        } else {
+          interimTranscript += e.results[i][0].transcript
+        }
       }
-      const full = localFinal + interim
+      
+      const full = finalTranscript + interimTranscript
       transcriptRef.current = full
       setInput(full)
 
