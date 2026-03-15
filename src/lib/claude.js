@@ -105,7 +105,7 @@ export async function transcribeWithOpenAI(audioBlob) {
     formData.append('language', 'en'); // optimize for English since it's an English practice app
     
     // Add prompt to give context to Whisper
-    formData.append('prompt', 'Hello SpeakUp! This is a typical English practice phrase with Brazilian accent.');
+    formData.append('prompt', 'SpeakUp English practice, clear pronunciation.');
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',

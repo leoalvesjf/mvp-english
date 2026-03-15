@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { sendMessage, speakWithOpenAI, transcribeWithOpenAI } from '../lib/claude'
 import { useAuth } from '../components/AuthProvider'
@@ -10,6 +11,7 @@ const MAX_MESSAGES = 10 // 10 AI responses per session
 export default function Chat() {
   const { user } = useAuth()
   const nickname = user?.user_metadata?.nickname || ''
+  const navigate = useNavigate()
   
   const [messages, setMessages] = useState([])
   const [progress, setProgress] = useState(null)
@@ -24,12 +26,15 @@ export default function Chat() {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [isSilent, setIsSilent] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
+  const [isVoiceMode, setIsVoiceMode] = useState(true)
+  const shouldAutoSendRef = useRef(false)
   const bottomRef = useRef(null)
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
   const audioContextRef = useRef(null)
   const analyserRef = useRef(null)
   const animationFrameRef = useRef(null)
+  const recordingStartTimeRef = useRef(0)
   const [voices, setVoices] = useState([])
 
   // Check if already practiced today and get progress
@@ -260,14 +265,25 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
 
       mediaRecorder.onstart = () => {
         setIsRecording(true)
+        recordingStartTimeRef.current = Date.now()
         if (!window.matchMedia('(max-width: 768px)').matches) {
-          initVisualizer(stream) // pass stream to avoid asking permission twice
+          initVisualizer(stream)
         }
       }
 
       mediaRecorder.onstop = async () => {
         setIsRecording(false)
         setAudioLevel(0)
+        
+        const duration = Date.now() - recordingStartTimeRef.current
+        if (duration < 500) {
+          console.log('Recording too short, ignoring.')
+          setLoading(false)
+          shouldAutoSendRef.current = false
+          stream.getTracks().forEach(track => track.stop())
+          return
+        }
+
         setLoading(true)
 
         // Stop all tracks to release microphone
@@ -282,12 +298,17 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
           const text = await transcribeWithOpenAI(audioBlob)
           if (text) {
-             setInput(prev => prev ? prev + ' ' + text : text)
+             if (shouldAutoSendRef.current) {
+               handleSend(text)
+             } else {
+               setInput(prev => prev ? prev + ' ' + text : text)
+             }
           }
         } catch (err) {
           alert('Erro ao transcrever áudio: ' + err.message)
         } finally {
           setLoading(false)
+          shouldAutoSendRef.current = false
         }
       }
 
@@ -296,6 +317,19 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
       console.error('Mic access error:', err)
       alert('Não foi possível acessar seu microfone. Verifique as permissões de gravação.')
       setIsRecording(false)
+    }
+  }
+
+  const startHolding = (e) => {
+    if (loading || isSending) return
+    e.target.setPointerCapture(e.pointerId)
+    shouldAutoSendRef.current = true
+    toggleVoice()
+  }
+
+  const stopHolding = () => {
+    if (isRecording) {
+      toggleVoice()
     }
   }
 
@@ -333,52 +367,27 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
   return (
     <div className="chat-page">
       {/* Header */}
-      <header className="chat-header" style={{ flexDirection: 'column', padding: '12px 16px', gap: '8px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          <div className="header-brand">
-            <span>🗣️</span>
-            <span className="brand-name">SpeakUp</span>
-          </div>
+      <header className="chat-header">
+        <div className="header-brand">
+          <span>🗣️</span>
+          <span className="brand-name">SpeakUp</span>
+        </div>
 
-          <div className="progress-info" style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Topic</div>
-            <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold' }}>{currentTopic?.title}</div>
-          </div>
-          
-          <div className="xp-badge" style={{ backgroundColor: '#1e293b', padding: '4px 10px', borderRadius: '20px', fontSize: '0.8rem', color: '#22d3ee' }}>
-            ✨ {progress?.xp || 0} XP
-          </div>
+        <div className="xp-badge">
+          ✨ {progress?.xp || 0} XP
+        </div>
 
+        <div className="header-actions" style={{ display: 'flex', gap: '8px' }}>
           <button 
             className={`btn-mute ${isSilent ? 'active' : ''}`} 
             onClick={() => setIsSilent(!isSilent)}
             title={isSilent ? 'Ativar Som' : 'Modo Silencioso'}
-            style={{ 
-              background: 'none', 
-              border: 'none', 
-              fontSize: '1.2rem', 
-              cursor: 'pointer',
-              opacity: isSilent ? 0.5 : 1,
-              transition: 'all 0.2s'
-            }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.4rem' }}
           >
             {isSilent ? '🔇' : '🔊'}
           </button>
-
-          <button className="btn-logout" onClick={handleLogout} title="Sair" style={{ marginLeft: 0 }}>↩</button>
+          <button className="btn-logout" onClick={() => navigate('/dashboard')} title="Voltar ao Painel">↩</button>
         </div>
-        
-        {/* Progress Bar */}
-        {!sessionDone && (
-          <div style={{ width: '100%', height: '6px', backgroundColor: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
-            <div style={{ 
-              height: '100%', 
-              width: `${timerPercent}%`, 
-              backgroundColor: '#22d3ee', 
-              transition: 'width 0.4s ease-out' 
-            }} />
-          </div>
-        )}
       </header>
 
       {/* Messages */}
@@ -410,49 +419,62 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
       </div>
 
       {/* Input area */}
-      {!sessionDone && (
-        <div className="input-area">
-          {isRecording && (
-            <div className="recording-status">
-              <span className="pulse"></span> 
-              {input.trim() ? 'Convertendo voz...' : 'Ouvindo...'}
-            </div>
-          )}
-          <input
-            className="text-input"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSend()}
-            placeholder="Type in English..."
-            disabled={loading || isSending}
-          />
-          <button
-            className={`btn-voice ${isRecording ? 'recording' : ''}`}
-            onClick={toggleVoice}
-            onContextMenu={(e) => e.preventDefault()}
-            title={isRecording ? 'Parar gravação' : 'Começar a falar'}
-            style={{ 
-              '--level': `${audioLevel}px`,
-              boxShadow: isRecording ? `0 0 var(--level) rgba(248,113,113,0.4)` : 'none'
-            }}
-          >
-            {isRecording ? '⏹' : '🎤'}
-          </button>
-          <button
-            className="btn-send"
-            onClick={() => handleSend()}
-            disabled={loading || isSending || !input.trim()}
-          >
-            ➤
-          </button>
-        </div>
-      )}
+      <div className="input-container">
+        {!sessionDone ? (
+          <div className={`input-area-new ${isVoiceMode ? 'voice-mode' : 'text-mode'}`}>
+            <button 
+              className="btn-mode-toggle" 
+              onClick={() => setIsVoiceMode(!isVoiceMode)}
+              title={isVoiceMode ? "Mudar para Texto" : "Mudar para Voz"}
+            >
+              {isVoiceMode ? '⌨️' : '🎤'}
+            </button>
 
-      {sessionDone && (
-        <div className="done-bar">
-          🌟 See you tomorrow! Keep it up!
-        </div>
-      )}
+            {isVoiceMode ? (
+              <div className="voice-container">
+                <div className={`pulse-rings ${isRecording ? 'recording' : ''}`}>
+                  <div className="ring" style={{ width: `${120 + audioLevel}px`, height: `${120 + audioLevel}px`, opacity: isRecording ? 0.3 : 0 }}></div>
+                  <div className="ring" style={{ width: `${120 + audioLevel * 1.5}px`, height: `${120 + audioLevel * 1.5}px`, opacity: isRecording ? 0.1 : 0 }}></div>
+                </div>
+                <button
+                  className={`btn-hold-to-talk ${isRecording ? 'recording' : ''}`}
+                  onPointerDown={startHolding}
+                  onPointerUp={stopHolding}
+                  onPointerLeave={stopHolding}
+                >
+                  {isRecording ? '⏹' : '🎤'}
+                </button>
+                <p className="voice-hint">
+                  {isRecording ? 'Solte para enviar' : 'Segure para falar'}
+                </p>
+              </div>
+            ) : (
+              <>
+                <input
+                  className="text-input"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSend()}
+                  placeholder="Type in English..."
+                  disabled={loading || isSending}
+                  autoFocus
+                />
+                <button
+                  className="btn-send"
+                  onClick={() => handleSend()}
+                  disabled={loading || isSending || !input.trim()}
+                >
+                  ➤
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="done-bar">
+            🌟 See you tomorrow! Keep it up!
+          </div>
+        )}
+      </div>
     </div>
   )
 }

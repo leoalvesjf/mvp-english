@@ -18,8 +18,8 @@ export default function Login() {
 
   useEffect(() => {
     if (user) {
-      console.log('Login: User detected, redirecting to /chat...')
-      navigate('/chat', { replace: true })
+      console.log('Login: User detected, redirecting to home...')
+      navigate('/', { replace: true })
     }
   }, [user, navigate])
 
