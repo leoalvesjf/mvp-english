@@ -35,6 +35,7 @@ export default function Chat() {
   const analyserRef = useRef(null)
   const animationFrameRef = useRef(null)
   const recordingStartTimeRef = useRef(0)
+  const activeAudioRef = useRef(null) // SINGLETON AUDIO MANAGER
   const [voices, setVoices] = useState([])
 
   // Check if already practiced today and get progress
@@ -157,12 +158,13 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
     }])
 
     if (!isSilent) {
+      if (activeAudioRef.current) activeAudioRef.current.pause()
       setIsSpeaking(true)
-      speakWithOpenAI(farewellText, audioElement).then(() => {
-        setIsSpeaking(false)
-      }).catch(() => {
-        setIsSpeaking(false)
-      })
+      const audioUrl = await speakWithOpenAI(farewellText, activeAudioRef.current)
+      if (audioUrl) {
+        setMessages(m => m.map(msg => msg.text === farewellText ? { ...msg, audioUrl } : msg))
+      }
+      setIsSpeaking(false)
     }
   }
 
@@ -186,9 +188,13 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
     // Start session timer on first message if not active
     if (!sessionActive && !sessionDone) setSessionActive(true)
 
-    // Pre-warm the audio object for mobile browsers on this synchronous click tick
-    const audioPlayer = new Audio();
-    audioPlayer.play().catch(() => {});
+    // Initialize the singleton audio for mobile autoplay
+    if (!activeAudioRef.current) {
+      activeAudioRef.current = new Audio()
+    } else {
+      activeAudioRef.current.pause()
+    }
+    activeAudioRef.current.play().catch(() => {})
 
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel()
@@ -203,25 +209,25 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
     try {
       const history = newMessages
         .filter(m => m.id !== 'welcome')
+        .slice(-6) // Only send last 6 messages to save tokens
         .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text }))
 
       const reply = await sendMessage(history, currentTopic, nickname, isSilent)
-      setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: reply }])
+      const assistantMsg = { id: Date.now() + 1, role: 'assistant', text: reply }
+      setMessages(m => [...m, assistantMsg])
       
       const newCount = aiMessageCount + 1
       setAiMessageCount(newCount)
 
       if (newCount >= MAX_MESSAGES) {
-        // Automatically finish session if limit reached
-        finishSession(audioPlayer)
+        finishSession(activeAudioRef.current)
       } else if (!isSilent) {
-        // Auto-read the reply
         setIsSpeaking(true);
-        speakWithOpenAI(reply, audioPlayer).then(() => {
-          setIsSpeaking(false);
-        }).catch(() => {
-          setIsSpeaking(false);
-        });
+        const audioUrl = await speakWithOpenAI(reply, activeAudioRef.current)
+        if (audioUrl) {
+          setMessages(m => m.map(msg => msg.id === assistantMsg.id ? { ...msg, audioUrl } : msg))
+        }
+        setIsSpeaking(false);
       }
     } catch {
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: 'Oops! Something went wrong. Try again! 🙏' }])
@@ -305,7 +311,12 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
              }
           }
         } catch (err) {
-          alert('Erro ao transcrever áudio: ' + err.message)
+          console.error('Transcription error:', err)
+          setMessages(m => [...m, { 
+            id: Date.now(), 
+            role: 'assistant', 
+            text: 'I had a bit of trouble hearing that. Could you try saying it again? 🙏' 
+          }])
         } finally {
           setLoading(false)
           shouldAutoSendRef.current = false
@@ -315,7 +326,11 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
       mediaRecorder.start()
     } catch (err) {
       console.error('Mic access error:', err)
-      alert('Não foi possível acessar seu microfone. Verifique as permissões de gravação.')
+      setMessages(m => [...m, { 
+        id: Date.now(), 
+        role: 'assistant', 
+        text: 'I can\'t seem to access your microphone. Please check your browser permissions! 🎙️' 
+      }])
       setIsRecording(false)
     }
   }
@@ -368,33 +383,30 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
     <div className="chat-page">
       {/* Header */}
       <header className="chat-header">
+        <button className="btn-logout-icon" onClick={() => navigate('/dashboard')} title="Back to Dashboard">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
         <div className="header-brand">
-          <span>🗣️</span>
-          <span className="brand-name">SpeakUp</span>
+          <span>SpeakUp</span>
+          <span className="xp-badge">✨ {progress?.xp || 0} XP</span>
         </div>
-
-        <div className="xp-badge">
-          ✨ {progress?.xp || 0} XP
-        </div>
-
-        <div className="header-actions" style={{ display: 'flex', gap: '8px' }}>
-          <button 
-            className={`btn-mute ${isSilent ? 'active' : ''}`} 
-            onClick={() => setIsSilent(!isSilent)}
-            title={isSilent ? 'Ativar Som' : 'Modo Silencioso'}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.4rem' }}
-          >
-            {isSilent ? '🔇' : '🔊'}
-          </button>
-          <button className="btn-logout" onClick={() => navigate('/dashboard')} title="Voltar ao Painel">↩</button>
-        </div>
+        <button 
+          className="btn-logout-icon" 
+          onClick={() => setIsSilent(!isSilent)}
+          title={isSilent ? 'Ativar Som' : 'Modo Silencioso'}
+        >
+          {isSilent ? (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          )}
+        </button>
       </header>
 
       {/* Messages */}
       <div className="messages-area">
         {messages.map(msg => (
           <div key={msg.id} className={`bubble-wrap ${msg.role}`}>
-            {msg.role === 'assistant' && <span className="avatar">🗣️</span>}
             <div className={`bubble ${msg.role}`}>
               {msg.text.split('\n').map((line, i) => (
                 <span key={i}>
@@ -404,15 +416,31 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
                   {i < msg.text.split('\n').length - 1 && <br />}
                 </span>
               ))}
+              {msg.role === 'assistant' && msg.audioUrl && (
+                <button 
+                  className="btn-replay" 
+                  onClick={() => {
+                    if (activeAudioRef.current) {
+                      activeAudioRef.current.pause();
+                      activeAudioRef.current.src = msg.audioUrl;
+                      activeAudioRef.current.play();
+                    } else {
+                      activeAudioRef.current = new Audio(msg.audioUrl);
+                      activeAudioRef.current.play();
+                    }
+                  }}
+                  title="Ouvir novamente"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  <span>REPLAY</span>
+                </button>
+              )}
             </div>
           </div>
         ))}
         {loading && (
           <div className="bubble-wrap assistant">
-            <span className="avatar">🗣️</span>
-            <div className="bubble assistant typing">
-              <span /><span /><span />
-            </div>
+            <div className="bubble assistant">...</div>
           </div>
         )}
         <div ref={bottomRef} />
@@ -427,25 +455,34 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
               onClick={() => setIsVoiceMode(!isVoiceMode)}
               title={isVoiceMode ? "Mudar para Texto" : "Mudar para Voz"}
             >
-              {isVoiceMode ? '⌨️' : '🎤'}
+              {isVoiceMode ? (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" ry="2"/><line x1="7" y1="15" x2="17" y2="15"/></svg>
+              ) : (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              )}
             </button>
 
             {isVoiceMode ? (
               <div className="voice-container">
-                <div className={`pulse-rings ${isRecording ? 'recording' : ''}`}>
-                  <div className="ring" style={{ width: `${120 + audioLevel}px`, height: `${120 + audioLevel}px`, opacity: isRecording ? 0.3 : 0 }}></div>
-                  <div className="ring" style={{ width: `${120 + audioLevel * 1.5}px`, height: `${120 + audioLevel * 1.5}px`, opacity: isRecording ? 0.1 : 0 }}></div>
+                <div className="pulse-rings">
+                  <div className="ring" style={{ width: `${120 + audioLevel}px`, height: `${120 + audioLevel}px`, opacity: isRecording ? 0.3 : 0 }} />
+                  <div className="ring" style={{ width: `${120 + audioLevel * 2}px`, height: `${120 + audioLevel * 2}px`, opacity: isRecording ? 0.1 : 0 }} />
                 </div>
                 <button
                   className={`btn-hold-to-talk ${isRecording ? 'recording' : ''}`}
                   onPointerDown={startHolding}
                   onPointerUp={stopHolding}
                   onPointerLeave={stopHolding}
+                  style={{ touchAction: 'none' }}
                 >
-                  {isRecording ? '⏹' : '🎤'}
+                  {isRecording ? (
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                  ) : (
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                  )}
                 </button>
                 <p className="voice-hint">
-                  {isRecording ? 'Solte para enviar' : 'Segure para falar'}
+                  {isRecording ? 'Release to send' : 'Hold to talk'}
                 </p>
               </div>
             ) : (
@@ -464,13 +501,13 @@ Volte amanhã para continuar aprendendo. See you tomorrow!`
                   onClick={() => handleSend()}
                   disabled={loading || isSending || !input.trim()}
                 >
-                  ➤
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 </button>
               </>
             )}
           </div>
         ) : (
-          <div className="done-bar">
+          <div className="done-bar" style={{ padding: '30px', textAlign: 'center', fontWeight: 'bold' }}>
             🌟 See you tomorrow! Keep it up!
           </div>
         )}

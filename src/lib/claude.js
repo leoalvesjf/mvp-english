@@ -55,15 +55,13 @@ export async function sendMessage(messages, topic, nickname, isSilent = false) {
 
 export async function speakWithOpenAI(text, audioElement) {
   try {
-    // 1. Clean the text
     const cleanText = text
       .replace(/TRY ISSO:.*$/gm, '')
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
       .trim();
 
-    if (!cleanText) return;
+    if (!cleanText) return null;
 
-    // 2. Fetch the audio from OpenAI
     const response = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
@@ -85,15 +83,15 @@ export async function speakWithOpenAI(text, audioElement) {
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     
-    // 3. Play the audio using the provided audio element (to bypass mobile autoplay policies)
-    const audio = audioElement || new Audio();
-    audio.src = url;
-    audio.onended = () => setIsSpeaking && setIsSpeaking(false);
-    await audio.play();
+    if (audioElement) {
+      audioElement.src = url;
+      await audioElement.play();
+    }
+    
+    return url;
   } catch (err) {
     console.error('Audio play error:', err);
-    // Exibe o erro para ajudar no debug se for um problema de chave/CORS
-    alert('Erro no áudio da OpenAI:\n' + err.message);
+    return null;
   }
 }
 
