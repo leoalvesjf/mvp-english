@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { sendMessage, speakWithOpenAI, transcribeWithOpenAI } from '../lib/claude'
 import { useAuth } from '../components/AuthProvider'
+import { TOPICS } from '../constants/curriculum'
 
 const MAX_MESSAGES = 10 // 10 AI responses per session
 
@@ -10,27 +11,18 @@ export default function Chat() {
   const { user } = useAuth()
   const nickname = user?.user_metadata?.nickname || ''
   
-  const WELCOME_MESSAGE = {
-    id: 'welcome',
-    role: 'assistant',
-    text: `Hello ${nickname}! 👋 I'm SpeakUp, your English practice friend!
-
-Every day we'll chat for ${MAX_MESSAGES} messages. This month we're talking about YOU — who you are, what you like, where you work.
-
-Ready to start? Just say "Hi!" or press the 🎤 button to speak!
-
-TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
-  }
-
-  const [messages, setMessages] = useState([WELCOME_MESSAGE])
+  const [messages, setMessages] = useState([])
+  const [progress, setProgress] = useState(null)
+  const [currentTopic, setCurrentTopic] = useState(TOPICS[0])
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
   const [aiMessageCount, setAiMessageCount] = useState(0)
   const [sessionActive, setSessionActive] = useState(false)
   const [sessionDone, setSessionDone] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const [isSilent, setIsSilent] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
   const bottomRef = useRef(null)
   const mediaRecorderRef = useRef(null)
@@ -40,21 +32,63 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
   const animationFrameRef = useRef(null)
   const [voices, setVoices] = useState([])
 
-  // Check if already practiced today
+  // Check if already practiced today and get progress
   useEffect(() => {
-    checkTodaySession()
-  }, [])
+    if (user) {
+      loadUserData()
+    }
+  }, [user])
 
-  async function checkTodaySession() {
-    const today = new Date().toISOString().split('T')[0]
-    const { data } = await supabase
-      .from('sessions')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('date', today)
-      .single()
-    if (data) setSessionDone(true)
+  async function loadUserData() {
+    setLoading(true)
+    try {
+      // 1. Check today's session
+      const today = new Date().toISOString().split('T')[0]
+      const { data: sessionData } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('date', today)
+        .single()
+      
+      if (sessionData) setSessionDone(true)
+
+      // 2. Fetch or initialize progress
+      const { data: progressData, error: progressError } = await supabase
+        .from('user_progress')
+        .select('*')
+        .eq('user_id', user.id)
+        .single()
+
+      if (progressData) {
+        setProgress(progressData)
+        setCurrentTopic(TOPICS[progressData.current_topic_index] || TOPICS[0])
+      }
+    } catch (err) {
+      console.error('Error loading user data:', err)
+    } finally {
+      setLoading(false)
+    }
   }
+
+  // Dynamic Welcome Message
+  useEffect(() => {
+    if (currentTopic && messages.length === 0) {
+      const welcomeMsg = {
+        id: 'welcome',
+        role: 'assistant',
+        text: `Hello ${nickname}! 👋 I'm Miss Ana, your English teacher!
+  
+Today's topic: **${currentTopic.title}**
+Goal: ${currentTopic.goal}
+
+${currentTopic.welcome}
+
+TRY ISSO: Diga "Hi, Miss Ana!"`
+      }
+      setMessages([welcomeMsg])
+    }
+  }, [currentTopic, nickname, messages.length])
 
   // Fetch voices
   useEffect(() => {
@@ -74,9 +108,42 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
     setSessionActive(false)
     setSessionDone(true)
     const today = new Date().toISOString().split('T')[0]
-    await supabase.from('sessions').insert({ user_id: user.id, date: today, messages_count: messages.length })
     
-    const farewellText = "Parabéns! Você completou sua prática de hoje. Você foi incrível! Volte amanhã para continuar aprendendo. See you tomorrow!"
+    // Save session
+    await supabase.from('sessions').insert({ 
+      user_id: user.id, 
+      date: today, 
+      messages_count: messages.length 
+    })
+
+    // Update Progress
+    const newXP = (progress?.xp || 0) + 50
+    const sessionsInCurrentTopic = Math.floor(newXP / 50) // Simplified: progress topic every session for testing? No, let's do every 3.
+    // Let's make it increment topic if xp hits a threshold or just for testing let's do +50xp per session.
+    
+    let nextTopicIndex = progress?.current_topic_index || 0
+    // Every 2 sessions (100 XP), move to next topic
+    if (newXP > 0 && newXP % 100 === 0) {
+      nextTopicIndex = Math.min(nextTopicIndex + 1, TOPICS.length - 1)
+    }
+
+    const { data: updatedProgress } = await supabase
+      .from('user_progress')
+      .update({ 
+        xp: newXP, 
+        current_topic_index: nextTopicIndex,
+        last_practice: today,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    if (updatedProgress) setProgress(updatedProgress)
+    
+    const farewellText = `Parabéns! Você completou sua prática de hoje. Você ganhou 50 XP! 🌟 
+Hoje falamos sobre ${currentTopic.title}. 
+Volte amanhã para continuar aprendendo. See you tomorrow!`
     
     setMessages(m => [...m, {
       id: Date.now(),
@@ -84,12 +151,14 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       text: farewellText
     }])
 
-    setIsSpeaking(true)
-    speakWithOpenAI(farewellText, audioElement).then(() => {
-      setIsSpeaking(false)
-    }).catch(() => {
-      setIsSpeaking(false)
-    })
+    if (!isSilent) {
+      setIsSpeaking(true)
+      speakWithOpenAI(farewellText, audioElement).then(() => {
+        setIsSpeaking(false)
+      }).catch(() => {
+        setIsSpeaking(false)
+      })
+    }
   }
 
 
@@ -131,7 +200,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
         .filter(m => m.id !== 'welcome')
         .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text }))
 
-      const reply = await sendMessage(history)
+      const reply = await sendMessage(history, currentTopic, nickname, isSilent)
       setMessages(m => [...m, { id: Date.now() + 1, role: 'assistant', text: reply }])
       
       const newCount = aiMessageCount + 1
@@ -140,7 +209,7 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
       if (newCount >= MAX_MESSAGES) {
         // Automatically finish session if limit reached
         finishSession(audioPlayer)
-      } else {
+      } else if (!isSilent) {
         // Auto-read the reply
         setIsSpeaking(true);
         speakWithOpenAI(reply, audioPlayer).then(() => {
@@ -270,15 +339,32 @@ TRY ISSO: Diga "Hi, my name is ${nickname || '[seu nome]'}"`
             <span>🗣️</span>
             <span className="brand-name">SpeakUp</span>
           </div>
+
+          <div className="progress-info" style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Topic</div>
+            <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold' }}>{currentTopic?.title}</div>
+          </div>
           
-          {!sessionDone ? (
-            <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: '500' }}>
-              {aiMessageCount}/{MAX_MESSAGES} Mensagens
-            </div>
-          ) : (
-            <span className="session-done-badge" style={{ fontSize: '0.85rem' }}>✓ Done today</span>
-          )}
-          
+          <div className="xp-badge" style={{ backgroundColor: '#1e293b', padding: '4px 10px', borderRadius: '20px', fontSize: '0.8rem', color: '#22d3ee' }}>
+            ✨ {progress?.xp || 0} XP
+          </div>
+
+          <button 
+            className={`btn-mute ${isSilent ? 'active' : ''}`} 
+            onClick={() => setIsSilent(!isSilent)}
+            title={isSilent ? 'Ativar Som' : 'Modo Silencioso'}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              fontSize: '1.2rem', 
+              cursor: 'pointer',
+              opacity: isSilent ? 0.5 : 1,
+              transition: 'all 0.2s'
+            }}
+          >
+            {isSilent ? '🔇' : '🔊'}
+          </button>
+
           <button className="btn-logout" onClick={handleLogout} title="Sair" style={{ marginLeft: 0 }}>↩</button>
         </div>
         
